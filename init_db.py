@@ -1,4 +1,4 @@
-from app import app
+from api.app import app
 from models import db, User, Club
 
 with app.app_context():
