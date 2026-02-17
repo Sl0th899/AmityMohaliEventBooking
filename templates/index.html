@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amity Mohali Event Map</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f4f4f4; }
+        
+        /* Map Styles */
+        #map-container { position: relative; width: 800px; height: 600px; margin: 20px auto; background: #e0e0e0; border: 2px solid #333; }
+        .map-sector { fill: #2ecc71; stroke: #333; stroke-width: 2; cursor: pointer; transition: fill 0.3s; opacity: 0.8; }
+        .map-sector:hover { opacity: 1; }
+        .booked { fill: #e74c3c !important; } /* RED for booked */
+        
+        /* Controls */
+        #controls { background: white; padding: 15px; margin: 20px auto; width: 600px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        select, input { padding: 8px; margin: 5px; }
+        button { padding: 8px 15px; background: #333; color: white; border: none; cursor: pointer; }
+        
+        /* Tooltip */
+        #tooltip { position: absolute; background: rgba(0,0,0,0.8); color: white; padding: 5px 10px; border-radius: 4px; display: none; pointer-events: none; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <h2>Amity Mohali Event Scheduler</h2>
+    
+    <div id="controls">
+        <label>Date: <input type="date" id="datePicker"></label>
+        <label>Slot: 
+            <select id="slotPicker">
+                <option value="1">09:00 - 10:30</option>
+                <option value="2">10:30 - 12:00</option>
+                <option value="3">12:00 - 01:30</option>
+                <option value="4">01:30 - 03:00</option>
+                <option value="5">03:00 - 04:30</option>
+            </select>
+        </label>
+        <div style="margin-top: 10px; font-size: 0.9em; color: #666;">
+            Select a date and slot to see availability. <br>
+            <span style="color:#2ecc71">● Available</span> 
+            <span style="color:#e74c3c">● Booked</span>
+        </div>
+    </div>
+
+    <div id="map-container">
+        <svg viewBox="0 0 800 600" width="100%" height="100%">
+            <rect id="loc_auditorium" class="map-sector available" x="50" y="50" width="150" height="100" />
+            <text x="60" y="100" pointer-events="none">Auditorium</text>
+
+            <rect id="loc_seminar_hall_2" class="map-sector available" x="220" y="50" width="120" height="80" />
+            <text x="230" y="90" pointer-events="none">Sem. Hall 2</text>
+
+            <circle id="loc_atrium" class="map-sector available" cx="400" cy="300" r="70" />
+            <text x="370" y="305" pointer-events="none">Atrium</text>
+
+            <rect id="loc_cafeteria" class="map-sector available" x="550" y="400" width="200" height="100" />
+            <text x="600" y="450" pointer-events="none">Cafeteria</text>
+            
+            </svg>
+        <div id="tooltip"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        const datePicker = document.getElementById('datePicker');
+        const slotPicker = document.getElementById('slotPicker');
+        
+        // Set default date to today
+        datePicker.valueAsDate = new Date();
+
+        // 1. Load Availability for selected Date/Slot
+        async function loadAvailability() {
+            const date = datePicker.value;
+            const slot = slotPicker.value;
+            
+            // Reset all to Green first
+            document.querySelectorAll('.map-sector').forEach(el => {
+                el.classList.remove('booked');
+                el.removeAttribute('data-info');
+            });
+
+            // Fetch from API
+            const response = await fetch(`/api/availability?date=${date}&slot_id=${slot}`);
+            const data = await response.json();
+
+            // Apply Red to booked slots
+            for (const [locationId, info] of Object.entries(data)) {
+                const el = document.getElementById(locationId);
+                if (el) {
+                    el.classList.add('booked');
+                    el.setAttribute('data-info', `${info.event} (${info.club})`);
+                }
+            }
+        }
+
+        // 2. Real-time Socket Listener
+        socket.on('map_update', (data) => {
+            // Only update if I am looking at the same date/slot
+            if (data.date === datePicker.value && data.slot_id == slotPicker.value) {
+                const el = document.getElementById(data.location_id);
+                if (el) {
+                    el.classList.add('booked');
+                    el.setAttribute('data-info', `${data.event_name} (${data.club_name})`);
+                    alert(`Live Update: ${data.location_id} just booked!`);
+                }
+            }
+        });
+
+        // 3. Hover Effects
+        document.querySelectorAll('.map-sector').forEach(el => {
+            el.addEventListener('mousemove', (e) => {
+                const tooltip = document.getElementById('tooltip');
+                if (el.classList.contains('booked')) {
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = e.pageX + 10 + 'px';
+                    tooltip.style.top = e.pageY + 10 + 'px';
+                    tooltip.innerText = el.getAttribute('data-info');
+                } else {
+                    tooltip.style.display = 'none';
+                }
+            });
+            el.addEventListener('mouseout', () => {
+                document.getElementById('tooltip').style.display = 'none';
+            });
+            
+            // Click to Book (Mockup)
+            el.addEventListener('click', async () => {
+                if (el.classList.contains('booked')) return;
+                
+                const eventName = prompt("Enter Event Name (Admin Only):");
+                if (!eventName) return;
+
+                // Simple fetch to book (Assuming you are logged in via another mechanism)
+                const res = await fetch('/api/book', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        date: datePicker.value,
+                        slot_id: parseInt(slotPicker.value),
+                        location_id: el.id,
+                        event_name: eventName,
+                        summary: "Generated via Map"
+                    })
+                });
+                
+                if (res.status === 201) {
+                    alert("Booked!");
+                } else {
+                    alert("Booking Failed (Not Logged In or Taken)");
+                }
+            });
+        });
+
+        // Event Listeners
+        datePicker.addEventListener('change', loadAvailability);
+        slotPicker.addEventListener('change', loadAvailability);
+
+        // Initial Load
+        loadAvailability();
+    </script>
+</body>
+</html>
