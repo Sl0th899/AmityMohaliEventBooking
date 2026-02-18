@@ -14,5 +14,15 @@
     "club": "Music Club",
     "event": "Open Mic",
     "timestamp": "2023-10-21T14:30:00Z"
+  },
+  {
+    "transaction_id": "e341564a-092a-4b6b-911d-bcc3b0e972fa",
+    "date": "2026-02-19",
+    "slot": "09:00-10:30",
+    "location_id": "loc_auditorium",
+    "club": "Test",
+    "event": "Test",
+    "booked_at": "2026-02-18T17:40:08.412Z",
+    "status": "CONFIRMED"
   }
 ]
