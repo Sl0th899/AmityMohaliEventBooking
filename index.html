@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amity Mohali - Campus Event Booking</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <meta name="description" content="Real-time campus facility booking system for Amity University Mohali.">
+</head>
+<body>
+
+    <header>
+        <div class="container">
+            <h1>Campus Facility Booking</h1>
+            <p>Select a date and time to view availability.</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="controls" aria-label="Booking Controls">
+            <div class="control-group">
+                <label for="booking-date">Date</label>
+                <input type="date" id="booking-date" name="booking-date">
+            </div>
+
+            <div class="control-group">
+                <label for="booking-slot">Time Slot</label>
+                <select id="booking-slot" name="booking-slot">
+                    <option value="09:00-10:30">09:00 – 10:30</option>
+                    <option value="10:30-12:00">10:30 – 12:00</option>
+                    <option value="12:00-01:30">12:00 – 01:30</option>
+                    <option value="01:30-03:00">01:30 – 03:00</option>
+                    <option value="03:00-04:30">03:00 – 04:30</option>
+                </select>
+            </div>
+            
+            <div class="status-legend">
+                <div class="legend-item"><span class="dot free"></span> Available</div>
+                <div class="legend-item"><span class="dot booked"></span> Booked</div>
+            </div>
+        </section>
+
+        <section class="map-container" aria-label="Campus Map">
+            <div id="tooltip" class="tooltip hidden" role="tooltip"></div>
+            
+            <svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg" aria-labelledby="mapTitle">
+                <title id="mapTitle">Amity University Campus Layout</title>
+                <defs>
+                    <style>
+                        .zone { cursor: pointer; transition: fill 0.3s ease; stroke: #333; stroke-width: 1px; }
+                        .zone:hover { opacity: 0.8; }
+                        .text-label { font-family: sans-serif; font-size: 12px; pointer-events: none; fill: #333; font-weight: bold;}
+                    </style>
+                </defs>
+
+                <rect x="0" y="0" width="800" height="600" fill="#f4f7f6" />
+
+                <path id="loc_auditorium" class="zone available" d="M 50 100 L 250 100 L 250 250 L 50 250 Z" fill="#2ecc71" />
+                <text x="150" y="175" text-anchor="middle" class="text-label">Auditorium</text>
+
+                <path id="loc_seminar_hall" class="zone available" d="M 300 100 L 500 100 L 500 200 L 300 200 Z" fill="#2ecc71" />
+                <text x="400" y="150" text-anchor="middle" class="text-label">Seminar Hall</text>
+
+                <path id="loc_atrium" class="zone available" d="M 300 250 L 500 250 L 500 450 L 300 450 Z" fill="#2ecc71" />
+                <text x="400" y="350" text-anchor="middle" class="text-label">Atrium</text>
+
+                <path id="loc_cafeteria" class="zone available" d="M 550 100 L 750 100 L 750 300 L 550 300 Z" fill="#2ecc71" />
+                <text x="650" y="200" text-anchor="middle" class="text-label">Cafeteria</text>
+
+                <path id="loc_mdp_room" class="zone available" d="M 50 300 L 250 300 L 250 400 L 50 400 Z" fill="#2ecc71" />
+                <text x="150" y="350" text-anchor="middle" class="text-label">MDP Room</text>
+
+                <path id="loc_wind_tunnel" class="zone available" d="M 550 350 L 750 350 L 750 500 L 550 500 Z" fill="#2ecc71" />
+                <text x="650" y="425" text-anchor="middle" class="text-label">Wind Tunnel</text>
+            </svg>
+        </section>
+
+        <div id="loading-indicator" class="hidden">Updating availability...</div>
+    </main>
+
+    <script src="assets/js/app.js"></script>
+</body>
+</html>

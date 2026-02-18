@@ -1,0 +1,134 @@
+:root {
+    --primary: #2c3e50;
+    --accent: #e74c3c;
+    --success: #2ecc71;
+    --bg: #ecf0f1;
+    --card: #ffffff;
+    --text: #34495e;
+}
+
+body {
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+header {
+    background: var(--primary);
+    color: white;
+    padding: 20px 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+header h1 { margin: 0; font-size: 1.5rem; }
+header p { margin: 5px 0 0; opacity: 0.8; font-size: 0.9rem; }
+
+/* Controls */
+.controls {
+    background: var(--card);
+    padding: 20px;
+    margin-top: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-end;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+}
+
+label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    color: #7f8c8d;
+}
+
+input, select {
+    padding: 10px;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    font-size: 1rem;
+    min-width: 200px;
+}
+
+/* Legend */
+.status-legend {
+    display: flex;
+    gap: 15px;
+    margin-left: auto;
+    align-items: center;
+}
+
+.legend-item { display: flex; align-items: center; font-size: 0.9rem; }
+.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.dot.free { background-color: var(--success); }
+.dot.booked { background-color: var(--accent); }
+
+/* Map */
+.map-container {
+    margin-top: 20px;
+    position: relative;
+    background: white;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Dynamic Classes applied by JS */
+.zone.available { fill: var(--success); }
+.zone.booked { fill: var(--accent); cursor: not-allowed; }
+
+/* Tooltip */
+.tooltip {
+    position: absolute;
+    background: rgba(44, 62, 80, 0.95);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    pointer-events: none;
+    z-index: 100;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    white-space: nowrap;
+    transition: opacity 0.2s;
+}
+
+.tooltip.hidden { opacity: 0; visibility: hidden; }
+.tooltip strong { display: block; margin-bottom: 2px; color: #f1c40f; }
+
+#loading-indicator {
+    text-align: center;
+    padding: 10px;
+    font-style: italic;
+    color: #7f8c8d;
+}
+.hidden { display: none; }
+
+@media (max-width: 600px) {
+    .controls { flex-direction: column; align-items: stretch; }
+    .status-legend { margin-left: 0; margin-top: 10px; }
+    input, select { width: 100%; box-sizing: border-box; }
+}
