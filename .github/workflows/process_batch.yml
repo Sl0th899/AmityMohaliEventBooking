@@ -4,7 +4,8 @@ on:
   repository_dispatch:
     types: [batch_booking]
 
-# SERIALIZATION: Ensures only one batch runs at a time
+# SERIALIZATION: Critical for preventing race conditions.
+# Ensures only one batch runs at a time.
 concurrency: 
   group: booking-writer
   cancel-in-progress: false
@@ -20,6 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -37,96 +39,99 @@ jobs:
 
             // --- CONFIG ---
             const DB_FILE = "bookings.json";
-            const AUDIT_FILE = "audit.csv";
-
+            const TMP_FILE = "bookings.tmp.json"; // For atomic writes
+            
             // --- HELPERS ---
-            // Simple sanitizer to prevent CSV injection or HTML injection
+            // Sanitize inputs to prevent JSON corruption or XSS injection in audit logs
             const sanitize = (str) => {
               if (typeof str !== "string") return "";
+              // Allow alphanumeric, spaces, hyphens, dots, colons, and underscores
               return str.replace(/[^\w\s\-\.@:]/g, "").trim(); 
             };
 
             // --- MAIN LOGIC ---
             try {
-              // 1. Parse Payload
+              // 1. Parse Incoming Payload
               const { batch } = JSON.parse(process.env.PAYLOAD);
               console.log(`Received batch of ${batch.length} requests.`);
 
-              // 2. Load Existing Data
+              // 2. Load Existing Database
               let bookings = [];
               if (fs.existsSync(DB_FILE)) {
                 try {
                   bookings = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
                 } catch (e) {
-                  console.error("Warning: DB corrupted, starting fresh.");
+                  console.error("Warning: DB corrupted or empty, starting fresh.");
+                  bookings = [];
                 }
-              }
-
-              // 3. Initialize Audit Log if missing
-              if (!fs.existsSync(AUDIT_FILE)) {
-                fs.writeFileSync(AUDIT_FILE, "Timestamp,TransactionID,Status,Reason,Date,Slot,Location,Club\n");
               }
 
               let newBookingsCount = 0;
               let conflictCount = 0;
-              const auditLines = [];
+              let duplicateCount = 0;
 
-              // 4. Iterate Batch
+              // 3. Iterate Batch
               batch.forEach(req => {
                 const safeDate = sanitize(req.date);
                 const safeSlot = sanitize(req.slot);
                 const safeLoc = sanitize(req.location_id);
                 const safeClub = sanitize(req.club);
+                const safeEvent = sanitize(req.event);
                 const transId = sanitize(req.transaction_id);
+                const timestamp = new Date().toISOString();
 
                 // A. Check for Duplicates (Idempotency)
+                // If this transaction ID is already in the DB, skip it.
                 const alreadyExists = bookings.some(b => b.transaction_id === transId);
                 if (alreadyExists) {
-                  console.log(`Skipping duplicate: ${transId}`);
+                  console.log(`Skipping duplicate transaction: ${transId}`);
+                  duplicateCount++;
                   return; 
                 }
 
                 // B. Check Availability (Conflict Logic)
+                // Check if Date + Slot + Location is already taken
                 const isConflict = bookings.some(b => 
                   b.date === safeDate && 
                   b.slot === safeSlot && 
                   b.location_id === safeLoc
                 );
 
-                const timestamp = new Date().toISOString();
-
                 if (isConflict) {
                   conflictCount++;
-                  auditLines.push(`${timestamp},${transId},REJECTED,Slot Taken,${safeDate},${safeSlot},${safeLoc},"${safeClub}"`);
+                  console.log(`CONFLICT: ${safeSlot} @ ${safeLoc} is taken.`);
                 } else {
                   // C. Book it!
                   newBookingsCount++;
                   
                   const newEntry = {
+                    transaction_id: transId,
                     date: safeDate,
                     slot: safeSlot,
                     location_id: safeLoc,
                     club: safeClub,
-                    event: sanitize(req.event),
-                    transaction_id: transId,
-                    booked_at: timestamp
+                    event: safeEvent,
+                    booked_at: timestamp,
+                    status: "CONFIRMED"
                   };
                   
                   bookings.push(newEntry);
-                  auditLines.push(`${timestamp},${transId},CONFIRMED,Success,${safeDate},${safeSlot},${safeLoc},"${safeClub}"`);
                 }
               });
 
-              // 5. Write Changes to Disk
+              // 4. Atomic Write to Disk
+              // Only write if we actually added something new
               if (newBookingsCount > 0) {
-                fs.writeFileSync(DB_FILE, JSON.stringify(bookings, null, 2));
+                // Write to temp file first
+                fs.writeFileSync(TMP_FILE, JSON.stringify(bookings, null, 2));
+                // Rename temp file to actual file (Atomic operation)
+                fs.renameSync(TMP_FILE, DB_FILE);
+                console.log("Database updated successfully.");
+              } else {
+                console.log("No new bookings to write.");
               }
 
-              if (auditLines.length > 0) {
-                fs.appendFileSync(AUDIT_FILE, auditLines.join("\n") + "\n");
-              }
-
-              console.log(`SUMMARY: ${newBookingsCount} confirmed, ${conflictCount} rejected.`);
+              console.log(`SUMMARY: ${newBookingsCount} confirmed, ${conflictCount} rejected, ${duplicateCount} duplicates.`);
 
             } catch (error) {
               console.error("FATAL ERROR in Node script:", error);
@@ -139,21 +144,27 @@ jobs:
           git config --global user.name "Amity Booking Bot"
           git config --global user.email "bot@amity.edu"
           
-          git add bookings.json audit.csv
+          git add bookings.json
           
-          # Only commit if there are changes
+          # Only commit if there are staged changes
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
             git commit -m "Batch Process: $(date +'%Y-%m-%d %H:%M:%S')"
             
-            # Simple retry loop for robustness
+            # Robust Push with Retry Logic
             n=0
             until [ "$n" -ge 5 ]
             do
-              git pull --rebase && git push && break
+              git push && break
               n=$((n+1))
-              echo "Push failed, retrying ($n/5)..."
+              echo "Push failed, pulling rebase and retrying ($n/5)..."
+              git pull --rebase
               sleep 5
             done
+            
+            if [ "$n" -eq 5 ]; then
+              echo "Failed to push after 5 retries."
+              exit 1
+            fi
           fi

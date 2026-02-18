@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     // =========================================================================
-    // CONFIGURATION
+    // 1. CONFIGURATION
     // =========================================================================
     // TODO: REPLACE THESE WITH YOUR EXACT GITHUB DETAILS
     const REPO_OWNER = 'your-github-username'; 
@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const BASE_DATA_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/bookings.json`;
 
     // =========================================================================
-    // DOM ELEMENTS
+    // 2. DOM ELEMENTS
     // =========================================================================
     const dateInput = document.getElementById('booking-date');
     const slotInput = document.getElementById('booking-slot');
@@ -19,12 +19,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const zones = document.querySelectorAll('.zone'); // The SVG paths
 
     // =========================================================================
-    // STATE MANAGEMENT
+    // 3. STATE MANAGEMENT
     // =========================================================================
     let allBookings = [];
 
     // =========================================================================
-    // INITIALIZATION
+    // 4. INITIALIZATION
     // =========================================================================
     const init = async () => {
         setupDatePicker();
@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchBookings();
         renderMap();
         
-        // Auto-refresh data every 60 seconds (optional, for real-time feel)
+        // Auto-refresh data every 60 seconds (Real-time feel without overloading)
         setInterval(fetchBookings, 60000);
     };
 
@@ -59,47 +59,51 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // =========================================================================
-    // DATA FETCHING (Production Optimized)
+    // 5. DATA FETCHING (Production Optimized)
     // =========================================================================
     const fetchBookings = async () => {
         showLoading(true);
         try {
             // CACHE BUSTING:
-            // We append a timestamp to the URL to prevent the browser or GitHub's CDN 
-            // from serving stale data. This ensures we see bookings made 10 seconds ago.
+            // Append a timestamp to force a fresh fetch from GitHub's Edge Cache.
             const cacheBuster = new Date().getTime();
             const url = `${BASE_DATA_URL}?t=${cacheBuster}`;
 
             const response = await fetch(url);
             
             if (!response.ok) {
-                // If 404, it might mean bookings.json doesn't exist yet (fresh repo)
-                if(response.status === 404) {
+                // If 404, it likely means bookings.json doesn't exist yet (fresh repo).
+                // Treat this as "0 bookings" rather than an error.
+                if (response.status === 404) {
+                    console.warn("bookings.json not found (fresh install). Defaulting to empty.");
                     allBookings = [];
                     return;
                 }
                 throw new Error(`GitHub API Error: ${response.status}`);
             }
 
-            allBookings = await response.json();
+            const data = await response.json();
             
             // Validate that we actually got an array
-            if (!Array.isArray(allBookings)) {
-                console.error("Data format error: Expected array", allBookings);
+            if (Array.isArray(data)) {
+                allBookings = data;
+            } else {
+                console.error("Data format error: Expected array, got", data);
                 allBookings = [];
             }
 
         } catch (error) {
-            console.warn('Fetching bookings failed (using empty state):', error);
-            // Don't alert the user on every background fetch failure, just log it.
+            console.warn('Fetching bookings failed:', error);
+            // We do NOT clear allBookings here to persist the old state 
+            // if a background refresh fails (better UX).
         } finally {
             showLoading(false);
-            renderMap(); // Re-render immediately after fetch
+            renderMap(); 
         }
     };
 
     // =========================================================================
-    // RENDERING LOGIC
+    // 6. RENDERING LOGIC
     // =========================================================================
     const renderMap = () => {
         const selectedDate = dateInput.value;
@@ -109,11 +113,17 @@ document.addEventListener('DOMContentLoaded', () => {
         zones.forEach(zone => {
             zone.classList.remove('booked');
             zone.classList.add('available');
-            delete zone.dataset.bookingInfo; // Clean up data
-            zone.style.fill = ""; // Reset inline styles if any
+            
+            // Clean up data attributes
+            delete zone.dataset.event;
+            delete zone.dataset.club;
+            
+            // Reset visual styles
+            zone.style.fill = ""; 
+            zone.style.cursor = "pointer";
         });
 
-        // 2. Find bookings that match current Date & Slot
+        // 2. Filter bookings for current Date & Slot
         const activeBookings = allBookings.filter(b => 
             b.date === selectedDate && 
             b.slot === selectedSlot
@@ -126,41 +136,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 element.classList.remove('available');
                 element.classList.add('booked');
                 
-                // Store sanitized info for tooltip
-                // (We sanitize again here just to be safe)
-                const safeEvent = escapeHtml(booking.event || "Event");
-                const safeClub = escapeHtml(booking.club || "Club");
-                
-                element.dataset.bookingInfo = JSON.stringify({
-                    event: safeEvent,
-                    club: safeClub
-                });
+                // Store raw data in dataset (We sanitize during DISPLAY, not storage)
+                element.dataset.event = booking.event || "Event";
+                element.dataset.club = booking.club || "Club";
             }
         });
     };
 
     // =========================================================================
-    // INTERACTION HANDLERS
+    // 7. INTERACTION HANDLERS
     // =========================================================================
     const showTooltip = (e, zone) => {
         if (!zone.classList.contains('booked')) return;
-        if (!zone.dataset.bookingInfo) return;
 
-        const info = JSON.parse(zone.dataset.bookingInfo);
-        
-        // Update Tooltip Content
-        tooltip.innerHTML = `
-            <div style="font-weight:bold; color:#f1c40f; margin-bottom:4px;">${info.event}</div>
-            <div style="font-size:0.85em;">Org: ${info.club}</div>
-        `;
+        const eventName = zone.dataset.event;
+        const clubName = zone.dataset.club;
+
+        if (!eventName) return;
+
+        // SECURITY CRITICAL: 
+        // We use .textContent instead of .innerHTML to prevent XSS.
+        // Even if a hacker names their event "<script>alert(1)</script>", 
+        // it will render as harmless text.
+        tooltip.textContent = `${eventName} (${clubName})`;
         
         tooltip.classList.remove('hidden');
     };
 
     const moveTooltip = (e) => {
         // Position tooltip 15px to the bottom-right of cursor
-        tooltip.style.left = `${e.pageX + 15}px`;
-        tooltip.style.top = `${e.pageY + 15}px`;
+        // Ensure it doesn't go off-screen (basic check)
+        const x = e.pageX + 15;
+        const y = e.pageY + 15;
+        
+        tooltip.style.left = `${x}px`;
+        tooltip.style.top = `${y}px`;
     };
 
     const hideTooltip = () => {
@@ -169,34 +179,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleZoneClick = (zone) => {
         if (zone.classList.contains('booked')) {
-            alert('This slot is already booked.');
+            alert('This slot is already reserved.');
         } else {
-            const name = zone.querySelector('title')?.textContent || "this location";
-            alert(`✅ ${zone.id} is available!\n\nPlease fill out the Google Form below to book it.`);
-            // Optional: Scroll to the embedded Google Form if you have one
+            // Friendly message guiding user to the Google Form
+            alert(`✅ Location available!\n\nPlease use the Google Form below to book: ${zone.id}`);
         }
     };
 
     // =========================================================================
-    // UTILITIES
+    // 8. UTILITIES
     // =========================================================================
     const showLoading = (isLoading) => {
-        if (loadingIndicator) {
-            if (isLoading) loadingIndicator.classList.remove('hidden');
-            else loadingIndicator.classList.add('hidden');
+        if (!loadingIndicator) return;
+        
+        if (isLoading) {
+            loadingIndicator.classList.remove('hidden');
+        } else {
+            loadingIndicator.classList.add('hidden');
         }
     };
 
-    // Basic XSS protection for rendering strings
-    const escapeHtml = (unsafe) => {
-        return unsafe
-             .replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;")
-             .replace(/"/g, "&quot;")
-             .replace(/'/g, "&#039;");
-    };
-
-    // Start App
+    // Start the App
     init();
 });

@@ -1,132 +1,155 @@
-// CONFIGURATION
-const GITHUB_CONFIG = {
-  OWNER: "your-github-username",    // REPLACE THIS
-  REPO: "amity-booking-system",     // REPLACE THIS
-  TOKEN_PROPERTY: "GITHUB_TOKEN",   // Name of Script Property storing the token
-  BRANCH: "main"
+/**
+ * ------------------------------------------------------------------
+ * AMITY EVENT BOOKING - PRODUCTION SYNC SCRIPT
+ * ------------------------------------------------------------------
+ * Instructions:
+ * 1. Paste this into Extensions > Apps Script in your Google Sheet.
+ * 2. Go to Project Settings (Gear Icon) > Script Properties.
+ * 3. Add a property: 
+ * Property: GITHUB_TOKEN
+ * Value: (Your Fine-Grained GitHub PAT)
+ * 4. Run the 'setupSheet' function ONCE to create the header columns.
+ * 5. Set a Trigger: syncBatchToGitHub -> Time-driven -> Every minute.
+ * ------------------------------------------------------------------
+ */
+
+// 1. CONFIGURATION
+const CONFIG = {
+  OWNER: "your-github-username", // REPLACE THIS
+  REPO: "amity-booking-system",  // REPLACE THIS
+  SHEET_NAME: "Form Responses 1" // Default Google Form sheet name
 };
 
-// COLUMN MAPPING (Adjust based on your Form)
-// Array indices are 0-based (Column A = 0, B = 1...)
+// 2. COLUMN MAPPING
+// Adjust these indices to match your Google Sheet columns (A=0, B=1, etc.)
+// Standard Google Form order usually matches this:
 const COL = {
-  TIMESTAMP: 0,
-  DATE: 1,
-  SLOT: 2,
-  LOCATION: 3,
-  CLUB: 4,
-  EVENT: 5,
-  TRANS_ID: 6,   // Created by setupSheet()
-  STATUS: 7      // Created by setupSheet()
+  TIMESTAMP: 0, // Column A
+  DATE: 1,      // Column B
+  SLOT: 2,      // Column C
+  LOCATION: 3,  // Column D
+  CLUB: 4,      // Column E
+  EVENT: 5,     // Column F
+  // These two are helper columns we will create:
+  TRANS_ID: 6,  // Column G (Transaction ID)
+  STATUS: 7     // Column H (Sync Status)
 };
 
 /**
- * Run this ONCE to create necessary columns in the Sheet.
+ * SETUP FUNCTION
+ * Run this once manually to add the necessary header columns.
  */
 function setupSheet() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const lastCol = sheet.getLastColumn();
-  
-  // Check if headers exist, if not, create them
-  const headers = sheet.getRange(1, 1, 1, lastCol + 2).getValues()[0];
-  
-  if (headers[COL.TRANS_ID] !== "Transaction ID") {
-    sheet.getRange(1, COL.TRANS_ID + 1).setValue("Transaction ID");
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) {
+    console.error(`Sheet "${CONFIG.SHEET_NAME}" not found. Check the name at the bottom tab.`);
+    return;
   }
-  if (headers[COL.STATUS] !== "Sync Status") {
-    sheet.getRange(1, COL.STATUS + 1).setValue("Sync Status");
-  }
+  
+  // Set Headers for the helper columns
+  sheet.getRange(1, COL.TRANS_ID + 1).setValue("Transaction ID");
+  sheet.getRange(1, COL.STATUS + 1).setValue("Sync Status");
+  console.log("Headers set successfully.");
 }
 
 /**
- * Main Trigger Function: Runs every minute.
+ * MAIN TRIGGER FUNCTION
+ * This is what the Time-Driven Trigger runs every minute.
  */
 function syncBatchToGitHub() {
+  // 1. Concurrency Lock: Prevent double-execution if the previous run is slow
   const lock = LockService.getScriptLock();
-  // Try to grab lock to prevent overlapping runs
-  if (!lock.tryLock(30000)) return; 
+  try {
+    lock.waitLock(30000); // Wait 30s for lock
+  } catch (e) {
+    console.log('Could not obtain lock, skipping run.');
+    return;
+  }
 
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
     const lastRow = sheet.getLastRow();
     
-    if (lastRow < 2) return; // No data
+    if (lastRow < 2) {
+      console.log("No data in sheet.");
+      return; 
+    }
 
-    // Get all data (including status columns)
+    // Get all data range (Start Row 2, Col 1, down to Last Row, across to Status Col)
+    // We add +1 to column index because getRange is 1-based
     const dataRange = sheet.getRange(2, 1, lastRow - 1, COL.STATUS + 1);
     const data = dataRange.getValues();
     
-    const batch = [];
-    const rowsToUpdate = [];
+    const batchPayload = [];
+    const rowIndicesToUpdate = [];
 
-    // 1. Scan for unsynced rows
+    // 2. Scan Rows
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
       const status = row[COL.STATUS];
-      
-      // If status is empty, it needs processing
-      if (!status || status === "") {
-        // Generate UUID if missing
-        let transId = row[COL.TRANS_ID];
-        if (!transId) {
-          transId = Utilities.getUuid();
-          // Write UUID back to sheet immediately so we have a record
-          sheet.getRange(i + 2, COL.TRANS_ID + 1).setValue(transId);
-        }
+      const rowNum = i + 2; // Actual sheet row number (1-based, +1 for header)
 
-        batch.push({
+      // Only process if NOT synced and NOT failed
+      if (status !== "SYNCED" && status !== "FAILED") {
+        
+        // Basic validation: skip empty rows
+        if (!row[COL.DATE] || !row[COL.SLOT]) continue;
+
+        // A. Handle Transaction ID (Idempotency)
+        let transId = row[COL.TRANS_ID];
+        if (!transId || transId === "") {
+          transId = Utilities.getUuid();
+          sheet.getRange(rowNum, COL.TRANS_ID + 1).setValue(transId);
+        }
+        batchPayload.push({
           transaction_id: transId,
-          date: formatDate(row[COL.DATE]), // Ensure YYYY-MM-DD
+          date: formatDate(row[COL.DATE]), // Ensure string YYYY-MM-DD
           slot: row[COL.SLOT],
           location_id: row[COL.LOCATION],
           club: row[COL.CLUB],
           event: row[COL.EVENT],
-          timestamp: row[COL.TIMESTAMP]
+          timestamp: new Date().toISOString()
         });
         
-        rowsToUpdate.push(i + 2); // Store 1-based row index
+        rowIndicesToUpdate.push(rowNum);
       }
     }
+    if (batchPayload.length > 0) {
+      console.log(`Sending batch of ${batchPayload.length} bookings...`);
+      const success = sendToGitHub(batchPayload);
 
-    if (batch.length === 0) {
-      console.log("No new bookings to sync.");
-      return;
+      const newStatus = success ? "SYNCED" : "FAILED";
+      
+      rowIndicesToUpdate.forEach(r => {
+        sheet.getRange(r, COL.STATUS + 1).setValue(newStatus);
+      });
+      
+      console.log(`Batch processing finished. Status: ${newStatus}`);
+    } else {
+      console.log("No pending bookings found.");
     }
 
-    // 2. Send Batch to GitHub
-    console.log(`Sending batch of ${batch.length} bookings...`);
-    const success = sendToGitHub(batch);
-
-    // 3. Update Sheet Status based on result
-    const statusValue = success ? "SYNCED" : "FAILED";
-    rowsToUpdate.forEach(rowIndex => {
-      sheet.getRange(rowIndex, COL.STATUS + 1).setValue(statusValue);
-      // Optional: Add timestamp of sync
-      // sheet.getRange(rowIndex, COL.STATUS + 2).setValue(new Date()); 
-    });
-
-  } catch (e) {
-    console.error("Critical Sync Error:", e);
+  } catch (err) {
+    console.error("Critical Error in syncBatchToGitHub:", err);
   } finally {
     lock.releaseLock();
   }
 }
 
-/**
- * Helper: Send payload to GitHub Repository Dispatch
- */
-function sendToGitHub(batchData) {
-  const token = PropertiesService.getScriptProperties().getProperty(GITHUB_CONFIG.TOKEN_PROPERTY);
+function sendToGitHub(batch) {
+  const token = PropertiesService.getScriptProperties().getProperty("GITHUB_TOKEN");
   
   if (!token) {
-    throw new Error("GITHUB_TOKEN missing in Script Properties");
+    console.error("ERROR: GITHUB_TOKEN not found in Script Properties.");
+    return false;
   }
 
-  const url = `https://api.github.com/repos/${GITHUB_CONFIG.OWNER}/${GITHUB_CONFIG.REPO}/dispatches`;
+  const url = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/dispatches`;
   
   const payload = {
     event_type: "batch_booking",
     client_payload: {
-      batch: batchData
+      batch: batch
     }
   };
 
@@ -141,26 +164,30 @@ function sendToGitHub(batchData) {
     muteHttpExceptions: true
   };
 
-  const response = UrlFetchApp.fetch(url, options);
-  const code = response.getResponseCode();
-
-  if (code >= 200 && code < 300) {
-    return true;
-  } else {
-    console.error(`GitHub API Error (${code}): ${response.getContentText()}`);
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
+    
+    if (code >= 200 && code < 300) {
+      return true;
+    } else {
+      console.error(`GitHub API Failed [${code}]: ${response.getContentText()}`);
+      return false;
+    }
+  } catch (e) {
+    console.error("Network Error:", e);
     return false;
   }
 }
 
-/**
- * Helper: Format Date object to YYYY-MM-DD
- */
 function formatDate(dateObj) {
   if (!dateObj) return "";
-  if (typeof dateObj === "string") return dateObj; // Already string?
+  if (typeof dateObj === "string") return dateObj;
+  
   try {
     return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
   } catch (e) {
-    return dateObj.toString();
+    console.warn("Date formatting error", e);
+    return String(dateObj);
   }
 }
