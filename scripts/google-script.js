@@ -179,15 +179,17 @@ function sendToGitHub(batch) {
     return false;
   }
 }
-
 function formatDate(dateObj) {
-  if (!dateObj) return "";
-  if (typeof dateObj === "string") return dateObj;
-  
-  try {
+  if (dateObj instanceof Date) {
     return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
-  } catch (e) {
-    console.warn("Date formatting error", e);
-    return String(dateObj);
   }
+  try {
+    const d = new Date(dateObj);
+    if (!isNaN(d.getTime())) {
+      return Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    }
+  } catch (e) {
+    console.error("Date conversion failed: " + dateObj);
+  }
+  return dateObj;
 }
