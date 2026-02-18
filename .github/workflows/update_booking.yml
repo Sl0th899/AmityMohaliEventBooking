@@ -4,51 +4,60 @@ on:
   repository_dispatch:
     types: [new_booking]
 
+# CRITICAL: Serialize runs. If 50 people book, they queue up 1-by-1.
+# This prevents race conditions entirely.
+concurrency: 
+  group: booking-queue
+  cancel-in-progress: false
+
 jobs:
-  update-db:
+  process-booking:
     runs-on: ubuntu-latest
-    
-    # Permission needed to push changes
     permissions:
       contents: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main 
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Process Booking and Update JSON
-        id: process
+      - name: Transactional Update
+        id: update
         env:
           PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: |
           node -e '
             const fs = require("fs");
-            
-            // 1. Load incoming payload
             const payload = JSON.parse(process.env.PAYLOAD);
-            console.log("Processing request:", payload);
+            const DB_FILE = "bookings.json";
 
-            // 2. Load existing DB
-            const dbFile = "bookings.json";
+            // 1. Sanitize Inputs (XSS Prevention)
+            const cleanText = (txt) => txt.replace(/[<>]/g, ""); 
+            payload.event = cleanText(payload.event);
+            payload.club = cleanText(payload.club);
+
+            // 2. Load DB
             let bookings = [];
-            
-            try {
-              if (fs.existsSync(dbFile)) {
-                const data = fs.readFileSync(dbFile, "utf8");
-                bookings = JSON.parse(data);
-              }
-            } catch (err) {
-              console.error("Error reading DB, starting fresh.", err);
+            if (fs.existsSync(DB_FILE)) {
+               try { bookings = JSON.parse(fs.readFileSync(DB_FILE, "utf8")); }
+               catch(e) { bookings = []; }
             }
 
-            // 3. Validation: Check for duplicates
+            // 3. Idempotency Check (Check by Transaction ID)
+            const exists = bookings.some(b => b.transaction_id === payload.transaction_id);
+            if (exists) {
+              console.log("Idempotent skip: Booking already exists.");
+              process.exit(0);
+            }
+
+            // 4. Conflict Validation (The "Critical Section")
             const isConflict = bookings.some(b => 
               b.date === payload.date && 
               b.slot === payload.slot && 
@@ -56,38 +65,21 @@ jobs:
             );
 
             if (isConflict) {
-              console.error("CONFLICT: Slot already booked.");
-              process.exit(1); // Fail the workflow
+              console.error("::error::CONFLICT: Slot taken.");
+              process.exit(1); 
             }
 
-            // 4. Append new booking
+            // 5. Commit to Disk
             bookings.push(payload);
-            
-            // 5. Write back to disk
-            fs.writeFileSync(dbFile, JSON.stringify(bookings, null, 2));
-            console.log("Booking appended successfully.");
+            fs.writeFileSync(DB_FILE, JSON.stringify(bookings, null, 2));
           '
 
-      - name: Commit and Push Changes
+      - name: Commit & Push
         if: success()
         run: |
           git config --global user.name "Booking Bot"
           git config --global user.email "bot@amity.edu"
-          
           git add bookings.json
-          git commit -m "New Booking: ${{ github.event.client_payload.club }} @ ${{ github.event.client_payload.date }}"
-          
-          # Retry loop for concurrency safety (pull --rebase on failure)
-          n=0
-          until [ "$n" -ge 5 ]
-          do
-             git pull --rebase && git push && break
-             n=$((n+1)) 
-             echo "Push failed, retrying ($n/5)..."
-             sleep 5
-          done
-          
-          if [ "$n" -eq 5 ]; then
-             echo "Failed to push after 5 retries"
-             exit 1
-          fi
+          # If file hasnt changed (idempotency skip), commit will fail empty. That is fine.
+          git commit -m "Booking: ${{ github.event.client_payload.transaction_id }}" || echo "Nothing to commit"
+          git push
