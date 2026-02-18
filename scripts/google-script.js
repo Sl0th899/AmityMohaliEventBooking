@@ -1,87 +1,139 @@
+// CONFIGURATION
+const GITHUB_CONFIG = {
+  OWNER: "your-github-username",    // REPLACE THIS
+  REPO: "amity-booking-system",     // REPLACE THIS
+  TOKEN_PROPERTY: "GITHUB_TOKEN",   // Name of Script Property storing the token
+  BRANCH: "main"
+};
+
+// COLUMN MAPPING (Adjust based on your Form)
+// Array indices are 0-based (Column A = 0, B = 1...)
+const COL = {
+  TIMESTAMP: 0,
+  DATE: 1,
+  SLOT: 2,
+  LOCATION: 3,
+  CLUB: 4,
+  EVENT: 5,
+  TRANS_ID: 6,   // Created by setupSheet()
+  STATUS: 7      // Created by setupSheet()
+};
+
 /**
- * GOOGLE APPS SCRIPT
- * ------------------
- * INSTRUCTIONS:
- * 1. Create a Google Form with: Date, Slot, Location ID, Club Name, Event Name.
- * 2. Open Script Editor (Extensions > Apps Script).
- * 3. Paste this code.
- * 4. Go to Project Settings > Script Properties.
- * 5. Add Property: 'GITHUB_TOKEN' -> Value: 'your_classic_pat_token'.
- * 6. Triggers: Add a trigger for 'onSubmit' -> 'From form' -> 'On form submit'.
+ * Run this ONCE to create necessary columns in the Sheet.
  */
+function setupSheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+  const lastCol = sheet.getLastColumn();
+  
+  // Check if headers exist, if not, create them
+  const headers = sheet.getRange(1, 1, 1, lastCol + 2).getValues()[0];
+  
+  if (headers[COL.TRANS_ID] !== "Transaction ID") {
+    sheet.getRange(1, COL.TRANS_ID + 1).setValue("Transaction ID");
+  }
+  if (headers[COL.STATUS] !== "Sync Status") {
+    sheet.getRange(1, COL.STATUS + 1).setValue("Sync Status");
+  }
+}
 
-function onSubmit(e) {
-  // =========================================================================
-  // CONFIGURATION
-  // =========================================================================
-  const CONFIG = {
-    OWNER: "your-github-username",    // TODO: Update this
-    REPO: "amity-booking-system",     // TODO: Update this
-    BRANCH: "main"
-  };
+/**
+ * Main Trigger Function: Runs every minute.
+ */
+function syncBatchToGitHub() {
+  const lock = LockService.getScriptLock();
+  // Try to grab lock to prevent overlapping runs
+  if (!lock.tryLock(30000)) return; 
 
-  // Retrieve token securely
-  const GITHUB_TOKEN = PropertiesService.getScriptProperties().getProperty("GITHUB_TOKEN");
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow < 2) return; // No data
 
-  if (!GITHUB_TOKEN) {
-    Logger.log("ERROR: GITHUB_TOKEN is not set in Script Properties.");
-    return;
+    // Get all data (including status columns)
+    const dataRange = sheet.getRange(2, 1, lastRow - 1, COL.STATUS + 1);
+    const data = dataRange.getValues();
+    
+    const batch = [];
+    const rowsToUpdate = [];
+
+    // 1. Scan for unsynced rows
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const status = row[COL.STATUS];
+      
+      // If status is empty, it needs processing
+      if (!status || status === "") {
+        // Generate UUID if missing
+        let transId = row[COL.TRANS_ID];
+        if (!transId) {
+          transId = Utilities.getUuid();
+          // Write UUID back to sheet immediately so we have a record
+          sheet.getRange(i + 2, COL.TRANS_ID + 1).setValue(transId);
+        }
+
+        batch.push({
+          transaction_id: transId,
+          date: formatDate(row[COL.DATE]), // Ensure YYYY-MM-DD
+          slot: row[COL.SLOT],
+          location_id: row[COL.LOCATION],
+          club: row[COL.CLUB],
+          event: row[COL.EVENT],
+          timestamp: row[COL.TIMESTAMP]
+        });
+        
+        rowsToUpdate.push(i + 2); // Store 1-based row index
+      }
+    }
+
+    if (batch.length === 0) {
+      console.log("No new bookings to sync.");
+      return;
+    }
+
+    // 2. Send Batch to GitHub
+    console.log(`Sending batch of ${batch.length} bookings...`);
+    const success = sendToGitHub(batch);
+
+    // 3. Update Sheet Status based on result
+    const statusValue = success ? "SYNCED" : "FAILED";
+    rowsToUpdate.forEach(rowIndex => {
+      sheet.getRange(rowIndex, COL.STATUS + 1).setValue(statusValue);
+      // Optional: Add timestamp of sync
+      // sheet.getRange(rowIndex, COL.STATUS + 2).setValue(new Date()); 
+    });
+
+  } catch (e) {
+    console.error("Critical Sync Error:", e);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Helper: Send payload to GitHub Repository Dispatch
+ */
+function sendToGitHub(batchData) {
+  const token = PropertiesService.getScriptProperties().getProperty(GITHUB_CONFIG.TOKEN_PROPERTY);
+  
+  if (!token) {
+    throw new Error("GITHUB_TOKEN missing in Script Properties");
   }
 
-  // =========================================================================
-  // DATA EXTRACTION
-  // =========================================================================
-  // We use a robust way to map questions by title rather than index.
-  // NOTE: Your Google Form Question Titles must match these keywords loosely.
+  const url = `https://api.github.com/repos/${GITHUB_CONFIG.OWNER}/${GITHUB_CONFIG.REPO}/dispatches`;
   
-  const response = e.response;
-  const itemResponses = response.getItemResponses();
-  const formData = {};
-
-  itemResponses.forEach(itemResponse => {
-    const title = itemResponse.getItem().getTitle().toLowerCase();
-    const answer = itemResponse.getResponse();
-
-    if (title.includes("date")) formData.date = answer; // Expecting YYYY-MM-DD
-    else if (title.includes("slot")) formData.slot = answer;
-    else if (title.includes("location")) formData.location_id = answer;
-    else if (title.includes("club")) formData.club = answer;
-    else if (title.includes("event")) formData.event = answer;
-  });
-
-  // =========================================================================
-  // PAYLOAD CONSTRUCTION
-  // =========================================================================
-  
-  // 1. Generate Transaction ID (UUID) for Idempotency
-  // This ensures if the script accidentally runs twice, the GitHub Action knows it's the same request.
-  const transactionId = Utilities.getUuid();
-
-  // 2. Build the Payload
   const payload = {
-    event_type: "new_booking",
+    event_type: "batch_booking",
     client_payload: {
-      transaction_id: transactionId,
-      date: formData.date,
-      slot: formData.slot,
-      location_id: formData.location_id,
-      club: formData.club,
-      event: formData.event,
-      timestamp: new Date().toISOString()
+      batch: batchData
     }
   };
 
-  Logger.log("Prepared Payload: " + JSON.stringify(payload));
-
-  // =========================================================================
-  // SEND TO GITHUB
-  // =========================================================================
-  const url = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/dispatches`;
-  
   const options = {
     method: "post",
     headers: {
-      "Authorization": "token " + GITHUB_TOKEN,
+      "Authorization": `token ${token}`,
       "Accept": "application/vnd.github.v3+json",
       "Content-Type": "application/json"
     },
@@ -89,21 +141,26 @@ function onSubmit(e) {
     muteHttpExceptions: true
   };
 
-  try {
-    const response = UrlFetchApp.fetch(url, options);
-    const responseCode = response.getResponseCode();
-    const responseBody = response.getContentText();
+  const response = UrlFetchApp.fetch(url, options);
+  const code = response.getResponseCode();
 
-    if (responseCode >= 200 && responseCode < 300) {
-      Logger.log("SUCCESS: Dispatch sent. Code: " + responseCode);
-    } else {
-      Logger.log("FAILURE: GitHub API Error. Code: " + responseCode);
-      Logger.log("Response: " + responseBody);
-      // Optional: Email admin on failure
-      // MailApp.sendEmail("admin@amity.edu", "Booking Script Failed", responseBody);
-    }
-  } catch (err) {
-    Logger.log("EXCEPTION: Request failed completely.");
-    Logger.log(err.toString());
+  if (code >= 200 && code < 300) {
+    return true;
+  } else {
+    console.error(`GitHub API Error (${code}): ${response.getContentText()}`);
+    return false;
+  }
+}
+
+/**
+ * Helper: Format Date object to YYYY-MM-DD
+ */
+function formatDate(dateObj) {
+  if (!dateObj) return "";
+  if (typeof dateObj === "string") return dateObj; // Already string?
+  try {
+    return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  } catch (e) {
+    return dateObj.toString();
   }
 }
