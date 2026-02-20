@@ -56,6 +56,15 @@ const app = {
     },
 
     bindEvents() {
+        // --- NEW: Scroll listener for Hero Header transition ---
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 50) {
+                document.body.classList.add('scrolled');
+            } else {
+                document.body.classList.remove('scrolled');
+            }
+        });
+
         // Navbar SPA Routing
         this.dom.navItems.forEach(item => {
             item.addEventListener('click', (e) => {
@@ -64,6 +73,12 @@ const app = {
                 
                 this.dom.navItems.forEach(n => n.classList.remove('active'));
                 e.currentTarget.classList.add('active');
+
+                // If on mobile/desktop and they click a tab, force the scroll state
+                // so the header shrinks if it hasn't already.
+                if (!document.body.classList.contains('scrolled')) {
+                    window.scrollTo({ top: 60, behavior: 'smooth' });
+                }
             });
         });
 

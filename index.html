@@ -9,9 +9,16 @@
 </head>
 <body>
 
-    <header class="glass-panel">
+    <div class="bg-animations">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <header id="main-header">
         <h1>Campus Events</h1>
         <p id="current-date-display">Select a date</p>
+        <div class="scroll-indicator">Scroll down to explore</div>
     </header>
 
     <main id="app-container">
@@ -42,10 +49,8 @@
                 <div class="calendar-grid-header">
                     <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
                 </div>
-                <div class="calendar-grid" id="calendar-grid">
-                    </div>
-                <div class="calendar-events-preview" id="calendar-events-preview">
-                    </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+                <div class="calendar-events-preview" id="calendar-events-preview"></div>
             </div>
         </section>
 
@@ -58,10 +63,9 @@
                 </a>
             </div>
         </section>
-
     </main>
 
-    <nav class="bottom-nav glass-panel">
+    <nav class="bottom-nav">
         <button class="nav-item active" data-target="view-home">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
             <span>Home</span>
