@@ -2,85 +2,80 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amity Mohali - Campus Event Booking</title>
-    
-    <link rel="stylesheet" href="assets/css/style.css">
-    
-    <meta name="description" content="Real-time campus facility booking system for Amity University Mohali.">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Amity Campus Booking</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <header>
-        <div class="container">
-            <h1>Campus Facility Booking</h1>
-            <p>Select a date and time to view availability.</p>
-        </div>
+    <header class="glass-panel">
+        <h1>Campus Events</h1>
+        <p id="current-date-display">Select a date</p>
     </header>
 
-    <main class="container">
-        <section class="controls" aria-label="Booking Controls">
-            <div class="control-group">
-                <label for="booking-date">Date</label>
-                <input type="date" id="booking-date" name="booking-date">
+    <main id="app-container">
+        
+        <section id="view-home" class="view active">
+            <div class="map-wrapper">
+                <img src="Atrium.png" alt="Campus Map" class="campus-map">
+                <div id="markers-container"></div>
             </div>
 
-            <div class="control-group">
-                <label for="booking-slot">Time Slot</label>
-                <select id="booking-slot" name="booking-slot">
-                    <option value="09:00-10:30">09:00 – 10:30</option>
-                    <option value="10:30-12:00">10:30 – 12:00</option>
-                    <option value="12:00-01:30">12:00 – 01:30</option>
-                    <option value="01:30-03:00">01:30 – 03:00</option>
-                    <option value="03:00-04:30">03:00 – 04:30</option>
-                </select>
-            </div>
-            
-            <div class="status-legend">
-                <div class="legend-item"><span class="dot free"></span> Available</div>
-                <div class="legend-item"><span class="dot booked"></span> Booked</div>
+            <div id="event-panel" class="glass-panel side-panel hidden">
+                <button class="close-btn" onclick="app.closePanel()">×</button>
+                <h2 id="panel-title">Location Details</h2>
+                <div class="status-badge" id="panel-status">Available</div>
+                <div id="panel-content" class="panel-content">
+                    </div>
             </div>
         </section>
 
-        <section class="map-container" aria-label="Campus Map">
-            <div id="tooltip" class="tooltip hidden" role="tooltip"></div>
-            
-            <svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg" aria-labelledby="mapTitle">
-                <title id="mapTitle">Amity University Campus Layout</title>
-                <defs>
-                    <style>
-                        /* Base SVG styles - critical for map interaction */
-                        .zone { cursor: pointer; transition: fill 0.3s ease; stroke: #333; stroke-width: 1px; }
-                        .zone:hover { opacity: 0.8; }
-                        .text-label { font-family: sans-serif; font-size: 12px; pointer-events: none; fill: #333; font-weight: bold;}
-                    </style>
-                </defs>
-
-                <rect x="0" y="0" width="800" height="600" fill="#f4f7f6" />
-
-                <path id="loc_auditorium" class="zone available" d="M 50 100 L 250 100 L 250 250 L 50 250 Z" fill="#2ecc71" />
-                <text x="150" y="175" text-anchor="middle" class="text-label">Auditorium</text>
-
-                <path id="loc_seminar_hall" class="zone available" d="M 300 100 L 500 100 L 500 200 L 300 200 Z" fill="#2ecc71" />
-                <text x="400" y="150" text-anchor="middle" class="text-label">Seminar Hall</text>
-
-                <path id="loc_atrium" class="zone available" d="M 300 250 L 500 250 L 500 450 L 300 450 Z" fill="#2ecc71" />
-                <text x="400" y="350" text-anchor="middle" class="text-label">Atrium</text>
-
-                <path id="loc_cafeteria" class="zone available" d="M 550 100 L 750 100 L 750 300 L 550 300 Z" fill="#2ecc71" />
-                <text x="650" y="200" text-anchor="middle" class="text-label">Cafeteria</text>
-
-                <path id="loc_mdp_room" class="zone available" d="M 50 300 L 250 300 L 250 400 L 50 400 Z" fill="#2ecc71" />
-                <text x="150" y="350" text-anchor="middle" class="text-label">MDP Room</text>
-
-                <path id="loc_wind_tunnel" class="zone available" d="M 550 350 L 750 350 L 750 500 L 550 500 Z" fill="#2ecc71" />
-                <text x="650" y="425" text-anchor="middle" class="text-label">Wind Tunnel</text>
-            </svg>
+        <section id="view-calendar" class="view">
+            <div class="glass-panel calendar-container">
+                <h2>Select Date</h2>
+                <div class="calendar-header">
+                    <button id="prev-month">‹</button>
+                    <h3 id="month-display">February 2026</h3>
+                    <button id="next-month">›</button>
+                </div>
+                <div class="calendar-grid-header">
+                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                </div>
+                <div class="calendar-grid" id="calendar-grid">
+                    </div>
+                <div class="calendar-events-preview" id="calendar-events-preview">
+                    </div>
+            </div>
         </section>
 
-        <div id="loading-indicator" class="hidden">Updating availability...</div>
+        <section id="view-form" class="view">
+            <div class="glass-panel form-container">
+                <h2>Submit Booking Request</h2>
+                <p>Ready to host your event? Secure your location by submitting a request through our official form.</p>
+                <a href="https://docs.google.com/forms/d/e/YOUR_FORM_ID/viewform" target="_blank" class="btn-primary">
+                    Book a Location
+                </a>
+            </div>
+        </section>
+
     </main>
 
-    <script src="assets/js/app.js"></script>
+    <nav class="bottom-nav glass-panel">
+        <button class="nav-item active" data-target="view-home">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+            <span>Home</span>
+        </button>
+        <button class="nav-item" data-target="view-calendar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            <span>Calendar</span>
+        </button>
+        <button class="nav-item" data-target="view-form">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            <span>Book Now</span>
+        </button>
+    </nav>
+
+    <script src="app.js"></script>
 </body>
 </html>
