@@ -9,16 +9,19 @@
 </head>
 <body>
 
-    <div class="bg-animations">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-        <div class="blob blob-3"></div>
+    <div class="bg-mesh"></div>
+
+    <div id="hero-section">
+        <h1>Campus Events</h1>
+        <p>Select a date to explore availability</p>
+        <div class="scroll-indicator">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 13l5 5 5-5M7 6l5 5 5-5"/></svg>
+        </div>
     </div>
 
-    <header id="main-header">
+    <header id="sticky-header" class="glass-panel">
         <h1>Campus Events</h1>
         <p id="current-date-display">Select a date</p>
-        <div class="scroll-indicator">Scroll down to explore</div>
     </header>
 
     <main id="app-container">
@@ -33,8 +36,7 @@
                 <button class="close-btn" onclick="app.closePanel()">×</button>
                 <h2 id="panel-title">Location Details</h2>
                 <div class="status-badge" id="panel-status">Available</div>
-                <div id="panel-content" class="panel-content">
-                    </div>
+                <div id="panel-content" class="panel-content"></div>
             </div>
         </section>
 
